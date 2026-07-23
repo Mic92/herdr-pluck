@@ -1,5 +1,6 @@
 mod detect;
 mod error;
+mod osc52;
 mod runner;
 mod system;
 mod tool;
@@ -7,9 +8,31 @@ mod tool;
 pub use error::ClipboardError;
 
 use detect::select_tool;
+use osc52::write_osc52;
 use runner::ClipboardCommandRunner;
+use std::io::Write;
 use system::SystemCommandRunner;
 use tool::ClipboardEnvironment;
+
+/// Copy mechanism, selected via `HERDR_PLUCK_CLIPBOARD`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ClipboardBackend {
+    /// System clipboard commands, falling back to OSC 52.
+    #[default]
+    Auto,
+    System,
+    Osc52,
+}
+
+impl ClipboardBackend {
+    pub fn from_env() -> Self {
+        match std::env::var("HERDR_PLUCK_CLIPBOARD").as_deref() {
+            Ok("system") => Self::System,
+            Ok("osc52") => Self::Osc52,
+            _ => Self::Auto,
+        }
+    }
+}
 
 /// Successful clipboard copy metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,13 +51,50 @@ pub struct SystemClipboard;
 
 impl Clipboard for SystemClipboard {
     fn copy(&self, text: &str) -> Result<CopySuccess, ClipboardError> {
-        copy_with_runner(text, &SystemCommandRunner, ClipboardEnvironment::current())
+        copy_with_backend(
+            text,
+            &SystemCommandRunner,
+            ClipboardEnvironment::current(),
+            ClipboardBackend::from_env(),
+            &mut std::io::stdout(),
+        )
     }
 }
 
 /// Copies text to the system clipboard with the default fallback adapter.
 pub fn copy_to_system_clipboard(text: &str) -> Result<CopySuccess, ClipboardError> {
     SystemClipboard.copy(text)
+}
+
+fn copy_with_backend(
+    text: &str,
+    runner: &impl ClipboardCommandRunner,
+    env: ClipboardEnvironment,
+    backend: ClipboardBackend,
+    osc_output: &mut impl Write,
+) -> Result<CopySuccess, ClipboardError> {
+    match backend {
+        ClipboardBackend::System => copy_with_runner(text, runner, env),
+        ClipboardBackend::Osc52 => copy_with_osc52(text, osc_output),
+        // Without a Wayland or X11 session the tools would fail or hit the
+        // wrong display, so go straight to OSC 52.
+        ClipboardBackend::Auto
+            if env.os != tool::ClipboardOs::Macos && !env.wayland && !env.x11 =>
+        {
+            copy_with_osc52(text, osc_output)
+        }
+        ClipboardBackend::Auto => match copy_with_runner(text, runner, env) {
+            Err(ClipboardError::NoToolFound { .. }) => copy_with_osc52(text, osc_output),
+            other => other,
+        },
+    }
+}
+
+fn copy_with_osc52(text: &str, output: &mut impl Write) -> Result<CopySuccess, ClipboardError> {
+    write_osc52(output, text)?;
+    Ok(CopySuccess {
+        tool: "osc52".to_string(),
+    })
 }
 
 fn copy_with_runner(
@@ -178,6 +238,89 @@ mod tests {
                 tried: "pbcopy, wl-copy, xclip, xsel".to_string()
             }
         );
+        assert!(runner.runs.borrow().is_empty());
+    }
+
+    #[test]
+    fn auto_backend_uses_osc52_on_linux_without_display() {
+        let runner = FakeRunner {
+            available: HashSet::from(["wl-copy", "xclip"]),
+            ..FakeRunner::default()
+        };
+        let mut osc_output = Vec::new();
+
+        let success = copy_with_backend(
+            "hello",
+            &runner,
+            env(ClipboardOs::Other, false, false),
+            ClipboardBackend::Auto,
+            &mut osc_output,
+        )
+        .unwrap();
+
+        assert_eq!(success.tool, "osc52");
+        assert!(runner.runs.borrow().is_empty());
+    }
+
+    #[test]
+    fn auto_backend_falls_back_to_osc52_when_no_tool_exists() {
+        let runner = FakeRunner::default();
+        let mut osc_output = Vec::new();
+
+        let success = copy_with_backend(
+            "hello",
+            &runner,
+            env(ClipboardOs::Other, false, true),
+            ClipboardBackend::Auto,
+            &mut osc_output,
+        )
+        .unwrap();
+
+        assert_eq!(success.tool, "osc52");
+        assert_eq!(osc_output, b"\x1b]52;c;aGVsbG8=\x07");
+        assert!(runner.runs.borrow().is_empty());
+    }
+
+    #[test]
+    fn auto_backend_prefers_system_tool_when_available() {
+        let runner = FakeRunner {
+            available: HashSet::from(["wl-copy"]),
+            ..FakeRunner::default()
+        };
+        let mut osc_output = Vec::new();
+
+        let success = copy_with_backend(
+            "token",
+            &runner,
+            env(ClipboardOs::Other, true, false),
+            ClipboardBackend::Auto,
+            &mut osc_output,
+        )
+        .unwrap();
+
+        assert_eq!(success.tool, "wl-copy");
+        assert!(osc_output.is_empty());
+    }
+
+    #[test]
+    fn osc52_backend_skips_system_tools_entirely() {
+        let runner = FakeRunner {
+            available: HashSet::from(["wl-copy"]),
+            ..FakeRunner::default()
+        };
+        let mut osc_output = Vec::new();
+
+        let success = copy_with_backend(
+            "hi",
+            &runner,
+            env(ClipboardOs::Other, true, false),
+            ClipboardBackend::Osc52,
+            &mut osc_output,
+        )
+        .unwrap();
+
+        assert_eq!(success.tool, "osc52");
+        assert_eq!(osc_output, b"\x1b]52;c;aGk=\x07");
         assert!(runner.runs.borrow().is_empty());
     }
 
