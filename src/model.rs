@@ -167,6 +167,9 @@ pub struct PickerSnapshot {
     pub session: TempTabSession,
     #[serde(default)]
     pub custom_patterns: Vec<PatternSpec>,
+    /// Clipboard backend name resolved from config in the action process.
+    #[serde(default)]
+    pub clipboard_backend: Option<String>,
 }
 
 /// Direction of a Herdr binary pane split as exposed by layout snapshots and replay commands.

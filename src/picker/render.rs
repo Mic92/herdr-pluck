@@ -175,6 +175,7 @@ mod tests {
                 return_pane_id: PaneId::new("p1"),
             },
             custom_patterns: Vec::new(),
+            clipboard_backend: None,
         }
     }
 

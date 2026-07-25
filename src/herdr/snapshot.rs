@@ -69,6 +69,7 @@ pub fn build_source_snapshot(
     visible_viewport: Option<VisibleViewport>,
     session: TempTabSession,
     custom_patterns: Vec<PatternSpec>,
+    clipboard_backend: Option<String>,
 ) -> Result<PickerSnapshot> {
     let source_tab_id = layout
         .tab_id
@@ -102,6 +103,7 @@ pub fn build_source_snapshot(
         },
         session,
         custom_patterns,
+        clipboard_backend,
     })
 }
 
@@ -219,6 +221,7 @@ mod tests {
                 return_pane_id: PaneId::new("p1"),
             },
             custom_patterns: Vec::new(),
+            clipboard_backend: None,
         }
     }
 

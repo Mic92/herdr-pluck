@@ -1,4 +1,4 @@
-use crate::clipboard::{Clipboard, SystemClipboard};
+use crate::clipboard::{Clipboard, ClipboardBackend, SystemClipboard};
 use crate::model::{PickerOutcome, PickerSnapshot, RenderLine, RenderSpan, RenderStyle};
 use crate::picker::copy::copy_selected_text;
 use crate::picker::input::{
@@ -13,7 +13,9 @@ use std::io::{self, Write};
 pub fn run_picker(snapshot: &PickerSnapshot) -> Result<PickerOutcome> {
     let mut stdout = io::stdout();
     let mut input = CrosstermInputSource;
-    let clipboard = SystemClipboard;
+    let clipboard = SystemClipboard::new(ClipboardBackend::resolve(
+        snapshot.clipboard_backend.as_deref(),
+    ));
     let _raw_mode = RawModeGuard::enable()?;
     run_picker_with(snapshot, &mut input, &clipboard, &mut stdout)
 }
@@ -151,6 +153,7 @@ mod tests {
                 return_pane_id: PaneId::new("p1"),
             },
             custom_patterns: Vec::new(),
+            clipboard_backend: None,
         }
     }
 

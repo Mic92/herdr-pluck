@@ -19,11 +19,16 @@ Invoke the plugin while a pane is focused, type the displayed hint for the token
 
 ## Clipboard backend
 
-By default, Herdr Pluck copies with the first available system clipboard command and falls back to emitting an OSC 52 escape sequence, which Herdr forwards to the attached client terminal. This makes copying work over remote attach and on hosts without clipboard tools. Set `HERDR_PLUCK_CLIPBOARD` to override:
+By default, Herdr Pluck copies with the first available system clipboard command and falls back to emitting an OSC 52 escape sequence, which Herdr forwards to the attached client terminal. This makes copying work over remote attach and on hosts without clipboard tools. Set `clipboard` in the plugin config file, or the `HERDR_PLUCK_CLIPBOARD` environment variable (which takes precedence), to override:
 
 - `auto` (default): system clipboard command, then OSC 52. On Linux without `WAYLAND_DISPLAY` or `DISPLAY`, OSC 52 is used directly.
 - `system`: only system clipboard commands
 - `osc52`: only OSC 52
+
+```toml
+# config.toml in `herdr plugin config-dir rmarganti.herdr-pluck`
+clipboard = "osc52"
+```
 
 ## Install
 

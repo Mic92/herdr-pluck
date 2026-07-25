@@ -28,6 +28,7 @@ pub fn launch_layout_tab_picker<R: CommandRunner>(
     target: &PaneId,
     binary_path: &Path,
     custom_patterns: Vec<PatternSpec>,
+    clipboard_backend: Option<String>,
 ) -> Result<LayoutTabLaunch> {
     let layout_bytes = {
         let mut commands = HerdrCommands::new(herdr_bin, runner);
@@ -99,6 +100,7 @@ pub fn launch_layout_tab_picker<R: CommandRunner>(
         Some(visible_viewport),
         session.clone(),
         custom_patterns,
+        clipboard_backend,
     )?;
     let snapshot_file = match choose_picker_snapshot_transport(&snapshot)? {
         SnapshotTransport::TempFile => write_snapshot_file(&snapshot)?,
@@ -385,6 +387,7 @@ mod tests {
                 regex: "CUSTOM-[0-9]+".to_string(),
                 priority: 25,
             }],
+            Some("osc52".to_string()),
         )
         .unwrap();
 
@@ -403,6 +406,7 @@ mod tests {
         let snapshot = crate::herdr::snapshot::read_snapshot_file(&launch.snapshot_file.path)
             .expect("snapshot should be readable");
         assert_eq!(snapshot.custom_patterns[0].name, "custom");
+        assert_eq!(snapshot.clipboard_backend.as_deref(), Some("osc52"));
         let _ = std::fs::remove_file(launch.snapshot_file.path);
     }
 
@@ -417,6 +421,7 @@ mod tests {
             &PaneId::new("p1"),
             Path::new("/bin/herdr-pluck"),
             Vec::new(),
+            None,
         )
         .unwrap_err();
 
@@ -444,6 +449,7 @@ mod tests {
             &PaneId::new("p2"),
             Path::new("/bin/herdr-pluck"),
             Vec::new(),
+            None,
         )
         .unwrap();
 
@@ -491,6 +497,7 @@ mod tests {
             &PaneId::new("p2"),
             Path::new("/bin/herdr-pluck"),
             Vec::new(),
+            None,
         )
         .unwrap_err();
 

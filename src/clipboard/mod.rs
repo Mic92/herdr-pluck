@@ -25,12 +25,28 @@ pub enum ClipboardBackend {
 }
 
 impl ClipboardBackend {
-    pub fn from_env() -> Self {
-        match std::env::var("HERDR_PLUCK_CLIPBOARD").as_deref() {
-            Ok("system") => Self::System,
-            Ok("osc52") => Self::Osc52,
-            _ => Self::Auto,
+    fn parse(name: &str) -> Option<Self> {
+        match name {
+            "auto" => Some(Self::Auto),
+            "system" => Some(Self::System),
+            "osc52" => Some(Self::Osc52),
+            _ => None,
         }
+    }
+
+    /// Resolves the backend: HERDR_PLUCK_CLIPBOARD wins over the config file
+    /// value, which wins over the default.
+    pub fn resolve(configured: Option<&str>) -> Self {
+        if let Ok(value) = std::env::var("HERDR_PLUCK_CLIPBOARD") {
+            if let Some(backend) = Self::parse(&value) {
+                return backend;
+            }
+        }
+        configured.and_then(Self::parse).unwrap_or_default()
+    }
+
+    pub fn from_env() -> Self {
+        Self::resolve(None)
     }
 }
 
@@ -47,7 +63,15 @@ pub trait Clipboard {
 
 /// System clipboard implementation using available platform command-line tools.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct SystemClipboard;
+pub struct SystemClipboard {
+    backend: ClipboardBackend,
+}
+
+impl SystemClipboard {
+    pub fn new(backend: ClipboardBackend) -> Self {
+        Self { backend }
+    }
+}
 
 impl Clipboard for SystemClipboard {
     fn copy(&self, text: &str) -> Result<CopySuccess, ClipboardError> {
@@ -55,7 +79,7 @@ impl Clipboard for SystemClipboard {
             text,
             &SystemCommandRunner,
             ClipboardEnvironment::current(),
-            ClipboardBackend::from_env(),
+            self.backend,
             &mut std::io::stdout(),
         )
     }
@@ -63,7 +87,7 @@ impl Clipboard for SystemClipboard {
 
 /// Copies text to the system clipboard with the default fallback adapter.
 pub fn copy_to_system_clipboard(text: &str) -> Result<CopySuccess, ClipboardError> {
-    SystemClipboard.copy(text)
+    SystemClipboard::new(ClipboardBackend::from_env()).copy(text)
 }
 
 fn copy_with_backend(
